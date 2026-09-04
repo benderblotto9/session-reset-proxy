@@ -92,3 +92,15 @@ The proxy connects as a `gateway-client` backend on loopback, which bypasses dev
 - Only works on localhost/loopback (by design)
 
 For remote connections, you'd need to implement the full device auth handshake (keypair + challenge signing) or enable `gateway.controlUi.dangerouslyDisableDeviceAuth`.
+
+## Running
+
+On the target platform, copy all files from `./systemd` into `~/.config/systemd/user`.
+
+```shell
+chmod 644 ~/.config/systemd/user/openclaw-session-reset-proxy.service
+chmod 600 ~/.config/systemd/user/openclaw-session-reset-proxy.env
+
+systemctl --user enable openclaw-session-reset-proxy
+systemctl --user start openclaw-session-reset-proxy
+```

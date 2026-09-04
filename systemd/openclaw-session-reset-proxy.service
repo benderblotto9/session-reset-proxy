@@ -1,0 +1,20 @@
+[Unit]
+Description=OpenClaw Session Reset Proxy
+After=openclaw-gateway.service
+Wants=openclaw-gateway.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+ExecStart=/usr/bin/node /home/claw/.openclaw/workspace/tools/session-reset-proxy/server.mjs
+Restart=always
+RestartSec=3
+EnvironmentFile=/home/claw/.config/systemd/user/openclaw-session-reset-proxy.env
+Environment=HOME=/home/claw
+Environment=PATH=/usr/bin:/home/claw/.npm-global/bin:/usr/local/bin:/bin
+WorkingDirectory=/home/claw/.openclaw/workspace/tools/session-reset-proxy
+TimeoutStopSec=10
+SuccessExitStatus=0 143
+
+[Install]
+WantedBy=default.target
