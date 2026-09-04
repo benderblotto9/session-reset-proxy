@@ -1,0 +1,16 @@
+{
+  "name": "session-reset-proxy",
+  "version": "1.0.0",
+  "description": "HTTP proxy for OpenClaw session management via Gateway WS protocol",
+  "main": "server.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "keywords": ["openclaw", "session", "proxy"],
+  "author": "Jon",
+  "license": "ISC",
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}
