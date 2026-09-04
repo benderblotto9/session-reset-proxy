@@ -86,6 +86,10 @@ class GatewayClient {
     return this.#connected;
   }
 
+  get reconnecting() {
+    return !this.#connected && this.#connecting;
+  }
+
   close() {
     clearTimeout(this.#reconnectTimer);
     if (this.#ws) {
@@ -203,6 +207,19 @@ class GatewayClient {
 // ── HTTP Server ─────────────────────────────────────────────────────────────
 const gw = new GatewayClient(GW_URL, GW_TOKEN);
 
+/** Guard: reject if gateway is not connected. */
+function requireGateway(res) {
+  if (gw.reconnecting) {
+    json(res, 503, { ok: false, error: 'Gateway is reconnecting, try again shortly' });
+    return false;
+  }
+  if (!gw.connected) {
+    json(res, 503, { ok: false, error: 'Gateway not connected' });
+    return false;
+  }
+  return true;
+}
+
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -235,12 +252,14 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, {
       ok: true,
       gwConnected: gw.connected,
+      gwReconnecting: gw.reconnecting,
       uptime: process.uptime(),
     });
   }
 
   // POST /new — reset a user's session
   if (req.method === 'POST' && req.url === '/new') {
+    if (!requireGateway(res)) return;
     let body;
     try {
       body = await parseBody(req);
@@ -253,8 +272,6 @@ const server = http.createServer(async (req, res) => {
       return json(res, 400, { ok: false, error: 'Missing required field: user' });
     }
 
-    // Build session key: agent:<agentId>:<userId>
-    // This matches OpenClaw's convention for user-scoped sessions
     const sessionKey = `agent:${AGENT_ID}:${userId}`;
 
     try {
@@ -264,13 +281,15 @@ const server = http.createServer(async (req, res) => {
       });
       return json(res, 200, result);
     } catch (e) {
+      const status = e.message?.includes('timed out') ? 504 : 502;
       console.error(`[proxy] reset failed for user=${userId}:`, e.message);
-      return json(res, 502, { ok: false, error: e.message });
+      return json(res, status, { ok: false, error: e.message });
     }
   }
 
   // POST /delete — delete a user's session entirely
   if (req.method === 'POST' && req.url === '/delete') {
+    if (!requireGateway(res)) return;
     let body;
     try {
       body = await parseBody(req);
@@ -292,13 +311,15 @@ const server = http.createServer(async (req, res) => {
       });
       return json(res, 200, result);
     } catch (e) {
+      const status = e.message?.includes('timed out') ? 504 : 502;
       console.error(`[proxy] delete failed for user=${userId}:`, e.message);
-      return json(res, 502, { ok: false, error: e.message });
+      return json(res, status, { ok: false, error: e.message });
     }
   }
 
   // POST /compact — compact a user's session
   if (req.method === 'POST' && req.url === '/compact') {
+    if (!requireGateway(res)) return;
     let body;
     try {
       body = await parseBody(req);
@@ -319,13 +340,15 @@ const server = http.createServer(async (req, res) => {
       });
       return json(res, 200, result);
     } catch (e) {
+      const status = e.message?.includes('timed out') ? 504 : 502;
       console.error(`[proxy] compact failed for user=${userId}:`, e.message);
-      return json(res, 502, { ok: false, error: e.message });
+      return json(res, status, { ok: false, error: e.message });
     }
   }
 
   // POST /create — create a new session
   if (req.method === 'POST' && req.url === '/create') {
+    if (!requireGateway(res)) return;
     let body;
     try {
       body = await parseBody(req);
@@ -346,8 +369,9 @@ const server = http.createServer(async (req, res) => {
       });
       return json(res, 200, result);
     } catch (e) {
+      const status = e.message?.includes('timed out') ? 504 : 502;
       console.error(`[proxy] create failed for user=${userId}:`, e.message);
-      return json(res, 502, { ok: false, error: e.message });
+      return json(res, status, { ok: false, error: e.message });
     }
   }
 
