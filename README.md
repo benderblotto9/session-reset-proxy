@@ -13,6 +13,7 @@ npm install
 # Copy and edit env
 cp .env.example .env
 # Set OPENCLAW_GATEWAY_TOKEN to your gateway token
+# Set RESET_PROXY_SECRET to a strong random string (e.g. openssl rand -hex 32)
 ```
 
 ## Run
@@ -24,7 +25,7 @@ node server.mjs
 Or with env vars inline:
 
 ```bash
-OPENCLAW_GATEWAY_TOKEN=xxx node server.mjs
+OPENCLAW_GATEWAY_TOKEN=xxx RESET_PROXY_SECRET=xxx node server.mjs
 ```
 
 ## Endpoints
@@ -48,20 +49,24 @@ All mutation endpoints accept:
 
 Also accepts `userId` or `user_id` as aliases.
 
-### Examples
+### Authentication
+
+All endpoints except `GET /health` require an `Authorization: Bearer <secret>` header. The shared secret is set via the `RESET_PROXY_SECRET` environment variable.
 
 ```bash
 # Reset a user's session
 curl -X POST http://127.0.0.1:18800/new \
+  -H 'Authorization: Bearer $RESET_PROXY_SECRET' \
   -H 'Content-Type: application/json' \
   -d '{"user":"REDACTED_USER_ID"}'
 
 # Delete a user's session
 curl -X POST http://127.0.0.1:18800/delete \
+  -H 'Authorization: Bearer $RESET_PROXY_SECRET' \
   -H 'Content-Type: application/json' \
   -d '{"user":"REDACTED_USER_ID"}'
 
-# Health check
+# Health check (no auth required)
 curl http://127.0.0.1:18800/health
 ```
 
@@ -70,6 +75,13 @@ curl http://127.0.0.1:18800/health
 The proxy constructs session keys as `agent:<agentId>:<userId>`, matching OpenClaw's convention for user-scoped sessions. The agent id defaults to `main` and can be overridden via `RESET_PROXY_AGENT`.
 
 Note: `sessions.reset` creates a new session if one doesn't exist for the key. This means you can use it idempotently — calling it on a user that has no session simply creates one.
+
+### Security
+
+- Shared secret authentication via `Authorization: Bearer` header
+- Constant-time comparison to prevent timing attacks
+- Health endpoint is unauthenticated (safe for monitoring)
+- Gateway token is read from environment, never logged or exposed
 
 ## Architecture
 

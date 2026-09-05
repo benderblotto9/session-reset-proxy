@@ -11,6 +11,7 @@
  * Environment:
  *   OPENCLAW_GATEWAY_URL    — Gateway WS URL (default: ws://127.0.0.1:18789)
  *   OPENCLAW_GATEWAY_TOKEN  — Gateway auth token (required)
+ *   RESET_PROXY_SECRET      — Shared secret for HTTP auth (required)
  *   RESET_PROXY_PORT        — HTTP listen port (default: 18800)
  *   RESET_PROXY_HOST        — HTTP listen host (default: 127.0.0.1)
  *   RESET_PROXY_AGENT       — Agent id (default: main)
@@ -24,6 +25,7 @@ import WebSocket from 'ws';
 // ── Config ──────────────────────────────────────────────────────────────────
 const GW_URL     = process.env.OPENCLAW_GATEWAY_URL   || 'ws://127.0.0.1:18789';
 const GW_TOKEN   = process.env.OPENCLAW_GATEWAY_TOKEN;
+const PROXY_SECRET = process.env.RESET_PROXY_SECRET;
 const PORT       = parseInt(process.env.RESET_PROXY_PORT || '18800', 10);
 const HOST       = process.env.RESET_PROXY_HOST || '127.0.0.1';
 const AGENT_ID   = process.env.RESET_PROXY_AGENT || 'main';
@@ -31,6 +33,11 @@ const RPC_TIMEOUT = parseInt(process.env.RESET_PROXY_TIMEOUT || '10000', 10);
 
 if (!GW_TOKEN) {
   console.error('ERROR: OPENCLAW_GATEWAY_TOKEN is required');
+  process.exit(1);
+}
+
+if (!PROXY_SECRET) {
+  console.error('ERROR: RESET_PROXY_SECRET is required');
   process.exit(1);
 }
 
@@ -240,6 +247,32 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+/** Constant-time string comparison to prevent timing attacks. */
+function timingSafeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/** Extract Bearer token from Authorization header. */
+function extractBearer(req) {
+  const auth = req.headers['authorization'] || '';
+  if (auth.startsWith('Bearer ')) return auth.slice(7).trim();
+  return null;
+}
+
+/** Guard: reject if shared secret is missing or wrong. */
+function requireAuth(req, res) {
+  const token = extractBearer(req);
+  if (!token || !timingSafeEqual(token, PROXY_SECRET)) {
+    json(res, 401, { ok: false, error: 'Unauthorized: invalid or missing Authorization header' });
+    return false;
+  }
+  return true;
+}
+
 const server = http.createServer(async (req, res) => {
   // CORS — permissive for local use
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -247,7 +280,7 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-  // Health check
+  // Health check (unauthenticated — safe for monitoring)
   if (req.method === 'GET' && req.url === '/health') {
     return json(res, 200, {
       ok: true,
@@ -256,6 +289,9 @@ const server = http.createServer(async (req, res) => {
       uptime: process.uptime(),
     });
   }
+
+  // All other routes require auth
+  if (!requireAuth(req, res)) return;
 
   // POST /new — reset a user's session
   if (req.method === 'POST' && req.url === '/new') {
@@ -387,7 +423,8 @@ const server = http.createServer(async (req, res) => {
         'GET /health':   'Health check',
       },
       body: { user: '<user-id>' },
-      example: `curl -X POST http://127.0.0.1:${PORT}/new -H 'Content-Type: application/json' -d '{"user":"REDACTED_USER_ID"}'`,
+      auth: 'Authorization: Bearer <secret> (required on all endpoints except /health)',
+      example: `curl -X POST http://127.0.0.1:${PORT}/new -H 'Authorization: Bearer <secret>' -H 'Content-Type: application/json' -d '{"user":"REDACTED_USER_ID"}'`,
     });
   }
 
